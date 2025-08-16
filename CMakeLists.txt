@@ -50,7 +50,17 @@ add_definitions(-DRV1106_1103)
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib/${LIBC_TYPE})
 
 #Opencv 4
-set(OpenCV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/${LIBC_TYPE}/lib/cmake/opencv4")
+# Check if OpenCV_DIR is provided via CMake or environment
+if(DEFINED OpenCV_DIR)
+    message(STATUS "Using provided OpenCV_DIR: ${OpenCV_DIR}")
+elseif(DEFINED ENV{OpenCV_DIR})
+    set(OpenCV_DIR $ENV{OpenCV_DIR})
+    message(STATUS "Using OpenCV_DIR from environment: ${OpenCV_DIR}")
+else()
+    # Fallback to local installation
+    set(OpenCV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/${LIBC_TYPE}/lib/cmake/opencv4")
+    message(STATUS "Using local OpenCV_DIR: ${OpenCV_DIR}")
+endif()
 find_package(OpenCV REQUIRED)
 #Thread
 set(THREADS_PREFER_PTHREAD_FLAG ON)
