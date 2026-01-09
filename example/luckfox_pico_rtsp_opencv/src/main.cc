@@ -1,6 +1,6 @@
 /*****************************************************************************
 * | Author      :   Luckfox team
-* | Function    :   
+* | Function    :
 * | Info        :
 *
 *----------------
@@ -32,27 +32,37 @@
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 
+#ifndef WIDTH
 #define DISP_WIDTH  1920
+#else
+#define DISP_WIDTH  WIDTH
+#endif
+
+#ifndef HEIGHT
 #define DISP_HEIGHT 1080
+#else
+#define DISP_HEIGHT HEIGHT
+#endif
+
 
 int main(int argc, char *argv[]) {
-  system("RkLunch-stop.sh");
-	RK_S32 s32Ret = 0; 
+  	system("RkLunch-stop.sh");
+	RK_S32 s32Ret = 0;
 
 	int width    = DISP_WIDTH;
-    int height   = DISP_HEIGHT;
+	int height   = DISP_HEIGHT;
 
 	char fps_text[16];
 	float fps = 0;
 	memset(fps_text,0,16);
 
-	//h264_frame	
-	VENC_STREAM_S stFrame;	
+	//h264_frame
+	VENC_STREAM_S stFrame;
 	stFrame.pstPack = (VENC_PACK_S *)malloc(sizeof(VENC_PACK_S));
 	RK_U64 H264_PTS = 0;
-	RK_U32 H264_TimeRef = 0; 
+	RK_U32 H264_TimeRef = 0;
 	VIDEO_FRAME_INFO_S stViFrame;
-	
+
 	// Create Pool
 	MB_POOL_CONFIG_S PoolCfg;
 	memset(&PoolCfg, 0, sizeof(MB_POOL_CONFIG_S));
@@ -61,18 +71,18 @@ int main(int argc, char *argv[]) {
 	PoolCfg.enAllocType = MB_ALLOC_TYPE_DMA;
 	//PoolCfg.bPreAlloc = RK_FALSE;
 	MB_POOL src_Pool = RK_MPI_MB_CreatePool(&PoolCfg);
-	printf("Create Pool success !\n");	
+	printf("Create Pool success !\n");
 
-	// Get MB from Pool 
+	// Get MB from Pool
 	MB_BLK src_Blk = RK_MPI_MB_GetMB(src_Pool, width * height * 3, RK_TRUE);
-	
+
 	// Build h264_frame
 	VIDEO_FRAME_INFO_S h264_frame;
 	h264_frame.stVFrame.u32Width = width;
 	h264_frame.stVFrame.u32Height = height;
 	h264_frame.stVFrame.u32VirWidth = width;
 	h264_frame.stVFrame.u32VirHeight = height;
-	h264_frame.stVFrame.enPixelFormat =  RK_FMT_RGB888; 
+	h264_frame.stVFrame.enPixelFormat =  RK_FMT_RGB888;
 	h264_frame.stVFrame.u32FrameFlag = 160;
 	h264_frame.stVFrame.pMbBlk = src_Blk;
 	unsigned char *data = (unsigned char *)RK_MPI_MB_Handle2VirAddr(src_Blk);
@@ -92,7 +102,7 @@ int main(int argc, char *argv[]) {
 		return -1;
 	}
 
-	// rtsp init	
+	// rtsp init
 	rtsp_demo_handle g_rtsplive = NULL;
 	rtsp_session_handle g_rtsp_session;
 	g_rtsplive = create_rtsp_demo(554);
@@ -107,50 +117,48 @@ int main(int argc, char *argv[]) {
 	// venc init
 	RK_CODEC_ID_E enCodecType = RK_VIDEO_ID_HEVC;
 	venc_init(0, width, height, enCodecType);
-	
-	printf("init success\n");	
-	
-	while(1) {			
+
+	printf("init success\n");
+
+	while(1) {
 		// get vi frame
 		h264_frame.stVFrame.u32TimeRef = H264_TimeRef++;
-		h264_frame.stVFrame.u64PTS = TEST_COMM_GetNowUs(); 
+		h264_frame.stVFrame.u64PTS = TEST_COMM_GetNowUs();
 		s32Ret = RK_MPI_VI_GetChnFrame(0, 0, &stViFrame, -1);
 		if(s32Ret == RK_SUCCESS)
 		{
 			void *vi_data = RK_MPI_MB_Handle2VirAddr(stViFrame.stVFrame.pMbBlk);
 
 			cv::Mat yuv420sp(height + height / 2, width, CV_8UC1, vi_data);
-			cv::Mat bgr(height, width, CV_8UC3, data);			
+			cv::Mat bgr(height, width, CV_8UC3, data);
 			cv::cvtColor(yuv420sp, bgr, cv::COLOR_YUV420sp2BGR);
 			cv::resize(bgr, frame, cv::Size(width ,height), 0, 0, cv::INTER_LINEAR);
-			
-			sprintf(fps_text,"fps = %.2f",fps);		
-            cv::putText(frame,fps_text,
-							cv::Point(40, 40),
-							cv::FONT_HERSHEY_SIMPLEX,1,
-							cv::Scalar(0,255,0),2);
-			
-		}
+
+			sprintf(fps_text,"fps = %.2f",fps);
+                        cv::putText(frame, fps_text, cv::Point(40, 40),
+                                	cv::FONT_HERSHEY_SIMPLEX, 1,
+                                	cv::Scalar(0, 255, 0), 2);
+                }
 		memcpy(data, frame.data, width * height * 3);
-		
-		// encode H264	
+
+		// encode H264
 		RK_MPI_VENC_SendFrame(0,  &h264_frame ,-1);
-	
+
 		// rtsp
-		s32Ret = RK_MPI_VENC_GetStream(0, &stFrame, -1);	
+		s32Ret = RK_MPI_VENC_GetStream(0, &stFrame, -1);
 		if(s32Ret == RK_SUCCESS) {
 			if(g_rtsplive && g_rtsp_session) {
-				//printf("len = %d PTS = %d \n",stFrame.pstPack->u32Len, stFrame.pstPack->u64PTS);	
+				//printf("len = %d PTS = %d \n",stFrame.pstPack->u32Len, stFrame.pstPack->u64PTS);
 				void *pData = RK_MPI_MB_Handle2VirAddr(stFrame.pstPack->pMbBlk);
 				rtsp_tx_video(g_rtsp_session, (uint8_t *)pData, stFrame.pstPack->u32Len,
 							  stFrame.pstPack->u64PTS);
 				rtsp_do_event(g_rtsplive);
 			}
 			RK_U64 nowUs = TEST_COMM_GetNowUs();
-			fps = (float) 1000000 / (float)(nowUs - h264_frame.stVFrame.u64PTS);			
+			fps = (float) 1000000 / (float)(nowUs - h264_frame.stVFrame.u64PTS);
 		}
 
-		// release frame 
+		// release frame
 		s32Ret = RK_MPI_VI_ReleaseChnFrame(0, 0, &stViFrame);
 		if (s32Ret != RK_SUCCESS) {
 			RK_LOGE("RK_MPI_VI_ReleaseChnFrame fail %x", s32Ret);
@@ -159,7 +167,6 @@ int main(int argc, char *argv[]) {
 		if (s32Ret != RK_SUCCESS) {
 			RK_LOGE("RK_MPI_VENC_ReleaseStream fail %x", s32Ret);
 		}
-	
 	}
 
 	// Destory MB
@@ -169,7 +176,7 @@ int main(int argc, char *argv[]) {
 
 	RK_MPI_VI_DisableChn(0, 0);
 	RK_MPI_VI_DisableDev(0);
-		
+
 	SAMPLE_COMM_ISP_Stop(0);
 
 	RK_MPI_VENC_StopRecvFrame(0);
@@ -179,7 +186,7 @@ int main(int argc, char *argv[]) {
 
 	if (g_rtsplive)
 		rtsp_del_demo(g_rtsplive);
-	
+
 	RK_MPI_SYS_Exit();
 
 	return 0;

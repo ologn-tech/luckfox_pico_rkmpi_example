@@ -20,38 +20,49 @@
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 
+#ifndef WIDTH
+#define DISP_WIDTH  1920
+#else
+#define DISP_WIDTH  WIDTH
+#endif
+
+#ifndef HEIGHT
+#define DISP_HEIGHT 1080
+#else
+#define DISP_HEIGHT HEIGHT
+#endif
+
 int main(int argc, char *argv[]) {
-  system("RkLunch-stop.sh");
-	RK_S32 s32Ret = 0; 
+	system("RkLunch-stop.sh");
+	RK_S32 s32Ret = 0;
 
 	int sX,sY,eX,eY;
-	int width    = 720;
-    int height   = 480;
+	int width    = DISP_WIDTH;
+	int height   = DISP_HEIGHT;
 
 	char fps_text[16];
 	float fps = 0;
 	memset(fps_text,0 , 16);
 	RK_U64 nowUs;
 
-	//opencv 
+	//opencv
 	cv::VideoCapture cap;
-    cv::Mat bgr;
+    	cv::Mat bgr;
 
-    cap.set(cv::CAP_PROP_FRAME_WIDTH,  width);
-    cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
-    cap.open(0);
-
+	cap.set(cv::CAP_PROP_FRAME_WIDTH,  width);
+	cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
+	cap.open(0);
 
 	// rkmpi init
 	if (RK_MPI_SYS_Init() != RK_SUCCESS) {
 		RK_LOGE("rk mpi sys init fail!");
 		return -1;
 	}
-	//h264_frame	
-	VENC_STREAM_S stFrame;	
+	//h264_frame
+	VENC_STREAM_S stFrame;
 	stFrame.pstPack = (VENC_PACK_S *)malloc(sizeof(VENC_PACK_S));
 	RK_U64 H264_PTS = 0;
-	RK_U32 H264_TimeRef = 0; 
+	RK_U32 H264_TimeRef = 0;
  	VIDEO_FRAME_INFO_S stVpssFrame;
 
 	// Create Pool
@@ -62,25 +73,24 @@ int main(int argc, char *argv[]) {
 	PoolCfg.enAllocType = MB_ALLOC_TYPE_DMA;
 	//PoolCfg.bPreAlloc = RK_FALSE;
 	MB_POOL src_Pool = RK_MPI_MB_CreatePool(&PoolCfg);
-	printf("Create Pool success !\n");	
+	printf("Create Pool success !\n");
 
-	// Get MB from Pool 
+	// Get MB from Pool
 	MB_BLK src_Blk = RK_MPI_MB_GetMB(src_Pool, width * height * 3, RK_TRUE);
- 	
+
 	// Build h264_frame
 	VIDEO_FRAME_INFO_S h264_frame;
 	h264_frame.stVFrame.u32Width = width;
 	h264_frame.stVFrame.u32Height = height;
 	h264_frame.stVFrame.u32VirWidth = width;
 	h264_frame.stVFrame.u32VirHeight = height;
-	h264_frame.stVFrame.enPixelFormat =  RK_FMT_RGB888; 
+	h264_frame.stVFrame.enPixelFormat =  RK_FMT_RGB888;
 	h264_frame.stVFrame.u32FrameFlag = 160;
 	h264_frame.stVFrame.pMbBlk = src_Blk;
 	unsigned char *data = (unsigned char *)RK_MPI_MB_Handle2VirAddr(src_Blk);
 	cv::Mat frame(cv::Size(width,height),CV_8UC3,data);
 
-
-	// rtsp init	
+	// rtsp init
 	rtsp_demo_handle g_rtsplive = NULL;
 	rtsp_session_handle g_rtsp_session;
 	g_rtsplive = create_rtsp_demo(554);
@@ -92,19 +102,19 @@ int main(int argc, char *argv[]) {
 	RK_CODEC_ID_E enCodecType = RK_VIDEO_ID_HEVC;
 	venc_init(0, width, height, enCodecType);
 
-	printf("init success\n");	
+	printf("init success\n");
 
 	while(1)
-	{	
-		// Opencv get frame 
+	{
+		// Opencv get frame
 		h264_frame.stVFrame.u32TimeRef = H264_TimeRef++;
-		h264_frame.stVFrame.u64PTS = TEST_COMM_GetNowUs(); 
+		h264_frame.stVFrame.u64PTS = TEST_COMM_GetNowUs();
 		cap >> bgr;
-		sprintf(fps_text,"fps = %.2f",fps);		
+		sprintf(fps_text,"fps = %.2f",fps);
 		cv::putText(bgr,fps_text,
 						cv::Point(40, 40),
 						cv::FONT_HERSHEY_SIMPLEX,1,
-						cv::Scalar(0,255,0),2);	
+						cv::Scalar(0,255,0),2);
 		cv::cvtColor(bgr, frame, cv::COLOR_BGR2RGB);
 		// send stream
 		// encode H264
@@ -116,14 +126,14 @@ int main(int argc, char *argv[]) {
 		{
 			if(g_rtsplive && g_rtsp_session)
 			{
-				//printf("len = %d PTS = %d \n",stFrame.pstPack->u32Len, stFrame.pstPack->u64PTS);	
+				//printf("len = %d PTS = %d \n",stFrame.pstPack->u32Len, stFrame.pstPack->u64PTS);
 				void *pData = RK_MPI_MB_Handle2VirAddr(stFrame.pstPack->pMbBlk);
 				rtsp_tx_video(g_rtsp_session, (uint8_t *)pData, stFrame.pstPack->u32Len,
 							  stFrame.pstPack->u64PTS);
 				rtsp_do_event(g_rtsplive);
 			}
 			nowUs = TEST_COMM_GetNowUs();
-			fps = (float) 1000000 / (float)(nowUs - h264_frame.stVFrame.u64PTS);			
+			fps = (float) 1000000 / (float)(nowUs - h264_frame.stVFrame.u64PTS);
 		}
 
 		s32Ret = RK_MPI_VENC_ReleaseStream(0, &stFrame);
@@ -132,7 +142,7 @@ int main(int argc, char *argv[]) {
 		}
 
 	}
-	
+
 	// Destory MB
 	RK_MPI_MB_ReleaseMB(src_Blk);
 	// Destory Pool
@@ -145,7 +155,7 @@ int main(int argc, char *argv[]) {
 
 	if (g_rtsplive)
 		rtsp_del_demo(g_rtsplive);
-	
+
 	RK_MPI_SYS_Exit();
 
 	return 0;

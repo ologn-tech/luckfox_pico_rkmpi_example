@@ -65,6 +65,10 @@ add_compile_options(-g -Wall
                     -DROCKIVA -DUAPI2
                     -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 
                     )
+# Add WIDTH and HEIGHT as compile definitions for the target
+if(DEFINED WIDTH AND DEFINED HEIGHT)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE WIDTH=${WIDTH} HEIGHT=${HEIGHT})
+endif()
 
 set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath-link,${CMAKE_CURRENT_SOURCE_DIR}/lib:/usr/lib")
 
