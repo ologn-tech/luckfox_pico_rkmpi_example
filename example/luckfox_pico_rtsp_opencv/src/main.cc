@@ -44,6 +44,12 @@
 #define DISP_HEIGHT HEIGHT
 #endif
 
+void print_usage(const char *program_name) {
+	printf("Usage: %s [OPTIONS]\n", program_name);
+	printf("Options:\n");
+	printf("  -m, --mode MODE    Set day/night mode (day or night, default: day)\n");
+	printf("  -h, --help         Show this help message\n");
+}
 
 int main(int argc, char *argv[]) {
   	system("RkLunch-stop.sh");
@@ -51,6 +57,37 @@ int main(int argc, char *argv[]) {
 
 	int width    = DISP_WIDTH;
 	int height   = DISP_HEIGHT;
+
+	// Parse command line arguments
+	const char *mode = "day";  // default to day mode
+	int opt;
+	struct option long_options[] = {
+		{"mode", required_argument, 0, 'm'},
+		{"help", no_argument, 0, 'h'},
+		{0, 0, 0, 0}
+	};
+
+	while ((opt = getopt_long(argc, argv, "m:h", long_options, NULL)) != -1) {
+		switch (opt) {
+			case 'm':
+				if (strcmp(optarg, "day") == 0 || strcmp(optarg, "night") == 0) {
+					mode = optarg;
+				} else {
+					fprintf(stderr, "Error: Invalid mode '%s'. Use 'day' or 'night'.\n", optarg);
+					print_usage(argv[0]);
+					return -1;
+				}
+				break;
+			case 'h':
+				print_usage(argv[0]);
+				return 0;
+			default:
+				print_usage(argv[0]);
+				return -1;
+		}
+	}
+
+	printf("Using mode: %s\n", mode);
 
 	char fps_text[16];
 	float fps = 0;
@@ -89,12 +126,23 @@ int main(int argc, char *argv[]) {
 	cv::Mat frame(cv::Size(width,height),CV_8UC3,data);
 
 	// rkaiq init
-	RK_BOOL multi_sensor = RK_FALSE;	
-	const char *iq_dir = "/etc/iqfiles";
-	rk_aiq_working_mode_t hdr_mode = RK_AIQ_WORKING_MODE_NORMAL;
-	//hdr_mode = RK_AIQ_WORKING_MODE_ISP_HDR2;
-	SAMPLE_COMM_ISP_Init(0, hdr_mode, multi_sensor, iq_dir);
-	SAMPLE_COMM_ISP_Run(0);
+	rk_aiq_sys_ctx_t *aiq_ctx;
+	rk_aiq_static_info_t aiq_static_info;
+	rk_aiq_uapi2_sysctl_enumStaticMetas(0, &aiq_static_info);
+
+	aiq_ctx = rk_aiq_uapi2_sysctl_init(aiq_static_info.sensor_info.sensor_name, "/etc/iqfiles", NULL, NULL);
+
+	if (rk_aiq_uapi2_sysctl_prepare(aiq_ctx, 0, 0, RK_AIQ_WORKING_MODE_NORMAL)) {
+		RK_LOGE("rk_aiq_uapi_sysctl_prepare fail!");
+		return -1;
+	}
+
+	if (rk_aiq_uapi2_sysctl_start(aiq_ctx)) {
+		RK_LOGE("rk_aiq_uapi_sysctl_start fail!");
+                return -1;
+        }
+
+	rk_aiq_uapi2_sysctl_switch_scene(aiq_ctx, "normal", mode);
 
 	// rkmpi init
 	if (RK_MPI_SYS_Init() != RK_SUCCESS) {
