@@ -73,7 +73,7 @@ add_executable(${PROJECT_NAME} ${SRC_FILES})
 add_compile_options(-g -Wall
                     -DISP_HW_V30 -DRKPLATFORM=ON -DARCH64=OFF
                     -DROCKIVA -DUAPI2
-                    -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 
+                    -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64
                     )
 # Add WIDTH and HEIGHT as compile definitions for the target
 if(DEFINED WIDTH AND DEFINED HEIGHT)
@@ -92,6 +92,7 @@ if(${LIBC_TYPE} STREQUAL "uclibc")
                         rockit
                         rockchip_mpp
                         rkaiq
+                        smartIr
                         pthread
                         rtsp
                         rga
@@ -105,6 +106,7 @@ elseif(${LIBC_TYPE} STREQUAL "glibc")
                         rockit
                         rockchip_mpp
                         rkaiq
+                        smartIr
                         pthread
                         rtsp
                         stdc++
@@ -117,16 +119,16 @@ elseif(${LIBC_TYPE} STREQUAL "glibc")
                         )
 endif()
 
-target_include_directories(${PROJECT_NAME} PRIVATE                        
+target_include_directories(${PROJECT_NAME} PRIVATE
                             ${OpenCV_INCLUDE_DIRS}
                             ${EXAMPLE_DIR}/include
                             ${CMAKE_CURRENT_SOURCE_DIR}
                             ${CMAKE_CURRENT_SOURCE_DIR}/utils
-                            ${CMAKE_CURRENT_SOURCE_DIR}/common 
-                            ${CMAKE_CURRENT_SOURCE_DIR}/common/isp3.x   
+                            ${CMAKE_CURRENT_SOURCE_DIR}/common
+                            ${CMAKE_CURRENT_SOURCE_DIR}/common/isp3.x
                             ${CMAKE_CURRENT_SOURCE_DIR}/include
                             ${CMAKE_CURRENT_SOURCE_DIR}/include/rknn
-                            ${CMAKE_CURRENT_SOURCE_DIR}/include/librga 
+                            ${CMAKE_CURRENT_SOURCE_DIR}/include/librga
                             ${CMAKE_CURRENT_SOURCE_DIR}/include/rkaiq
                             ${CMAKE_CURRENT_SOURCE_DIR}/include/rkaiq/uAPI2
                             ${CMAKE_CURRENT_SOURCE_DIR}/include/rkaiq/common
@@ -141,5 +143,5 @@ message(STATUS "model dir PATH: ${EXAMPLE_DIR}/model")
 set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/install/${LIBC_TYPE}/${PROJECT_NAME}_demo")
 install(TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_PREFIX})
 SET(MODEL_DIR "${EXAMPLE_DIR}/model")
-file(GLOB MODEL_FILES "${MODEL_DIR}/*")  
+file(GLOB MODEL_FILES "${MODEL_DIR}/*")
 install(FILES ${MODEL_FILES} DESTINATION ${CMAKE_INSTALL_PREFIX}/model)

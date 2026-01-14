@@ -14,6 +14,12 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <linux/videodev2.h>
+#include <sys/fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/mman.h>
+#include <sys/ioctl.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -25,8 +31,14 @@
 #include <unistd.h>
 #include <vector>
 
+
+#include <rk_aiq_user_api2_camgroup.h>
+#include <rk_aiq_user_api2_imgproc.h>
+#include <rk_aiq_user_api2_sysctl.h>
+#include "rk_smart_ir_api.h"
 #include "rtsp_demo.h"
 #include "luckfox_mpi.h"
+#include "sample_comm.h"
 
 #include "opencv2/core/core.hpp"
 #include "opencv2/highgui/highgui.hpp"
@@ -43,6 +55,68 @@
 #else
 #define DISP_HEIGHT HEIGHT
 #endif
+
+static rk_aiq_sys_ctx_t *aiq_ctx = NULL;
+static rk_aiq_static_info_t aiq_static_info = {0};
+static rk_smart_ir_ctx_t *smartIr_ctx = NULL;
+static void smartIr_cb(rk_smart_ir_result_t result)
+{
+    if (result.status == RK_SMART_IR_STATUS_NIGHT) {
+        if (result.is_status_change) {
+            printf("SMART_IR: switch to Night\n");
+            // 1) switch isp night params
+            rk_aiq_uapi2_sysctl_switch_scene(aiq_ctx, "normal", "night");
+            // 2) ir-cutter off
+            // TODO: user should define ir-cutter control func here
+        }
+        if (result.is_fill_change) {
+            // 3) manual/auto ir-led, set result.fill_value
+            // TODO: user should define led control func here
+        }
+    } else if (result.status == RK_SMART_IR_STATUS_DAY && result.is_status_change) {
+        printf("SMART_IR: switch to Day\n");
+        // 1) ir-cutter on
+        // TODO: user should define ir-cutter control func here
+        // 2) ir-led off
+        // TODO: user should define led control func here
+        // 3) switch isp day params
+        rk_aiq_uapi2_sysctl_switch_scene(aiq_ctx, "normal", "day");
+    }
+}
+static void smartIr_start()
+{
+    smartIr_ctx = rk_smart_ir_init(aiq_ctx);
+    /* NOTE:
+     * The API `rk_smart_ir_iniCfg` reads configuration from an INI file located at the configured path.
+     * If the API `rk_smart_ir_setAttr` is called after `rk_smart_ir_iniCfg`, the configuration read from
+     * the INI file might be overwritten by the new settings.
+     */
+    rk_smart_ir_iniCfg(smartIr_ctx, "tmp/smart_ir.ini");
+
+    rk_smart_ir_attr_t attr;
+    //memset(&attr, 0, sizeof(attr));
+    rk_smart_ir_getAttr(smartIr_ctx, &attr);
+    attr.init_status = RK_SMART_IR_STATUS_DAY;
+    attr.switch_mode = RK_SMART_IR_SWITCH_MODE_AUTO;
+    attr.light_mode = RK_SMART_IR_LIGHT_MODE_MANUAL;
+    attr.light_type = RK_SMART_IR_LIGHT_TYPE_IR;
+    attr.light_value = 100;
+    attr.params.d2n_envL_th = 0.04f;
+    attr.params.n2d_envL_th = 0.20f;
+    attr.params.rggain_base = 1.00f;
+    attr.params.bggain_base = 1.00f;
+    attr.params.awbgain_rad = 0.10f;
+    attr.params.awbgain_dis = 0.20f;
+    attr.params.switch_cnts_th = 50;
+    rk_smart_ir_setAttr(smartIr_ctx, &attr);
+    rk_smart_ir_runCb(smartIr_ctx, false, smartIr_cb);
+}
+
+static void smartIr_stop()
+{
+    rk_smart_ir_deInit(smartIr_ctx);
+    smartIr_ctx = NULL;
+}
 
 void print_usage(const char *program_name) {
 	printf("Usage: %s [OPTIONS]\n", program_name);
@@ -92,7 +166,6 @@ int main(int argc, char *argv[]) {
 	char fps_text[16];
 	float fps = 0;
 	memset(fps_text,0,16);
-
 	//h264_frame
 	VENC_STREAM_S stFrame;
 	stFrame.pstPack = (VENC_PACK_S *)malloc(sizeof(VENC_PACK_S));
@@ -126,8 +199,6 @@ int main(int argc, char *argv[]) {
 	cv::Mat frame(cv::Size(width,height),CV_8UC3,data);
 
 	// rkaiq init
-	rk_aiq_sys_ctx_t *aiq_ctx;
-	rk_aiq_static_info_t aiq_static_info;
 	rk_aiq_uapi2_sysctl_enumStaticMetas(0, &aiq_static_info);
 
 	aiq_ctx = rk_aiq_uapi2_sysctl_init(aiq_static_info.sensor_info.sensor_name, "/etc/iqfiles", NULL, NULL);
@@ -144,6 +215,7 @@ int main(int argc, char *argv[]) {
 
 	rk_aiq_uapi2_sysctl_switch_scene(aiq_ctx, "normal", mode);
 
+    smartIr_start();
 	// rkmpi init
 	if (RK_MPI_SYS_Init() != RK_SUCCESS) {
 		RK_LOGE("rk mpi sys init fail!");
@@ -188,10 +260,8 @@ int main(int argc, char *argv[]) {
                                 	cv::Scalar(0, 255, 0), 2);
                 }
 		memcpy(data, frame.data, width * height * 3);
-
 		// encode H264
 		RK_MPI_VENC_SendFrame(0,  &h264_frame ,-1);
-
 		// rtsp
 		s32Ret = RK_MPI_VENC_GetStream(0, &stFrame, -1);
 		if(s32Ret == RK_SUCCESS) {
@@ -205,7 +275,6 @@ int main(int argc, char *argv[]) {
 			RK_U64 nowUs = TEST_COMM_GetNowUs();
 			fps = (float) 1000000 / (float)(nowUs - h264_frame.stVFrame.u64PTS);
 		}
-
 		// release frame
 		s32Ret = RK_MPI_VI_ReleaseChnFrame(0, 0, &stViFrame);
 		if (s32Ret != RK_SUCCESS) {
@@ -236,6 +305,12 @@ int main(int argc, char *argv[]) {
 		rtsp_del_demo(g_rtsplive);
 
 	RK_MPI_SYS_Exit();
+    smartIr_stop();
+    if (aiq_ctx) {
+        rk_aiq_uapi2_sysctl_stop(aiq_ctx, false);
+        rk_aiq_uapi2_sysctl_deinit(aiq_ctx);
+        aiq_ctx = NULL;
+    }
 
 	return 0;
 }
